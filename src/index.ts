@@ -1,3 +1,7 @@
+import AgentAPI from "apminsight";
+
+AgentAPI.config();
+
 import "dotenv/config";
 import express from "express";
 import subjectsRouter from "./routes/subjects";
