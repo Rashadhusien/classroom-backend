@@ -1,12 +1,9 @@
-import arcjet, {
-  detectBot,
-  shield,
-  tokenBucket,
-  slidingWindow,
-} from "@arcjet/node";
+import arcjet, { shield, detectBot, slidingWindow } from "@arcjet/node";
 
 if (!process.env.ARCJET_KEY && process.env.NODE_ENV !== "test") {
-  throw new Error("ARCJET_KEY env is Required");
+  throw new Error(
+    "ARCJET_KEY environment variable is required. Sign up for your Arcjet key at https://app.arcjet.com",
+  );
 }
 
 const aj = arcjet({
@@ -14,11 +11,8 @@ const aj = arcjet({
   rules: [
     shield({ mode: "LIVE" }),
     detectBot({
-      mode: "LIVE", // Blocks requests. Use "DRY_RUN" to log only
-      allow: [
-        "CATEGORY:SEARCH_ENGINE", // Google, Bing, etc
-        "CATEGORY:PREVIEW", // Link previews e.g. Slack, Discord
-      ],
+      mode: "LIVE",
+      allow: ["CATEGORY:SEARCH_ENGINE", "CATEGORY:PREVIEW"],
     }),
     slidingWindow({
       mode: "LIVE",

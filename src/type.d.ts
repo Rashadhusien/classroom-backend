@@ -1,3 +1,14 @@
-type UserRoles = "admin" | "teacher" | "student";
+import { auth } from "./lib/auth";
 
-type RateLimitRole = UserRoles | "guest";
+declare global {
+  namespace Express {
+    interface Request {
+      user?: typeof auth.$Infer.Session.user;
+      session?: typeof auth.$Infer.Session.session;
+    }
+  }
+}
+
+export type UserRoles = "admin" | "teacher" | "student";
+
+export type RateLimitRole = UserRoles | "guest";
