@@ -6,9 +6,9 @@ import "dotenv/config";
 import express from "express";
 import subjectsRouter from "./routes/subjects.js";
 import cors from "cors";
-import { auth } from "./lib/auth";
+import { auth } from "./lib/auth.js";
 import { toNodeHandler } from "better-auth/node";
-// import securityMiddleware from "./middleware/security";
+// import securityMiddleware from "./middleware/security.js";
 const app = express();
 const PORT = 8000;
 
