@@ -5,9 +5,11 @@ AgentAPI.config();
 import "dotenv/config";
 import express from "express";
 import subjectsRouter from "./routes/subjects.js";
+import usersRouter from "./routes/users.js";
 import cors from "cors";
 import { auth } from "./lib/auth.js";
 import { toNodeHandler } from "better-auth/node";
+import classesRouter from "./routes/classes.js";
 // import securityMiddleware from "./middleware/security.js";
 const app = express();
 const PORT = 8000;
@@ -28,6 +30,8 @@ app.use(express.json());
 // app.use(securityMiddleware);
 
 app.use("/api/subjects", subjectsRouter);
+app.use("/api/users", usersRouter);
+app.use("/api/classes", classesRouter);
 
 app.get("/", (req, res) => {
   res.send("Hello, welcome to the classroom backend!");
