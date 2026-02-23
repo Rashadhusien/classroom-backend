@@ -12,6 +12,8 @@ import subjectsRouter from "./routes/subjects.js";
 import classesRouter from "./routes/classes.js";
 import departmentRouter from "./routes/departments.js";
 import enrollmentsRouter from "./routes/enrollments.js";
+import lecturesRouter from "./routes/lectures.js";
+import lecturescontentRouter from "./routes/lecturecontent.js";
 // import securityMiddleware from "./middleware/security.js";
 const app = express();
 const PORT = 8000;
@@ -36,6 +38,8 @@ app.use("/api/users", usersRouter);
 app.use("/api/classes", classesRouter);
 app.use("/api/departments", departmentRouter);
 app.use("/api/enrollments", enrollmentsRouter);
+app.use("/api/lectures", lecturesRouter);
+app.use("/api/lecturescontent", lecturescontentRouter);
 
 app.get("/", (req, res) => {
   res.send("Hello, welcome to the classroom backend!");

@@ -9,7 +9,11 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
 export const roleEnum = pgEnum("role", ["student", "teacher", "admin"]);
+
+// ─── Shared timestamp columns ─────────────────────────────────────────────────
 
 const timestamps = {
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -18,6 +22,8 @@ const timestamps = {
     .$onUpdate(() => new Date())
     .notNull(),
 };
+
+// ─── User ─────────────────────────────────────────────────────────────────────
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -29,6 +35,8 @@ export const user = pgTable("user", {
   imageCldPubId: text("image_cld_pub_id"),
   ...timestamps,
 });
+
+// ─── Session ──────────────────────────────────────────────────────────────────
 
 export const session = pgTable(
   "session",
@@ -49,6 +57,8 @@ export const session = pgTable(
   },
   (table) => [index("session_user_id_idx").on(table.userId)],
 );
+
+// ─── Account ──────────────────────────────────────────────────────────────────
 
 export const account = pgTable(
   "account",
@@ -81,6 +91,8 @@ export const account = pgTable(
   ],
 );
 
+// ─── Verification ─────────────────────────────────────────────────────────────
+
 export const verification = pgTable(
   "verification",
   {
@@ -97,7 +109,12 @@ export const verification = pgTable(
   (table) => [index("verification_identifier_idx").on(table.identifier)],
 );
 
+// ─── Relations ────────────────────────────────────────────────────────────────
+// userRelations is extended here (rather than in app.ts) to keep the auth
+// schema self-contained. Cross-schema relations point back to app.ts tables.
+
 export const userRelations = relations(user, ({ many }) => ({
+  // Auth
   sessions: many(session),
   accounts: many(account),
 }));
@@ -115,6 +132,8 @@ export const accountRelations = relations(account, ({ one }) => ({
     references: [user.id],
   }),
 }));
+
+// ─── Inferred Types ───────────────────────────────────────────────────────────
 
 export type User = typeof user.$inferSelect;
 export type NewUser = typeof user.$inferInsert;

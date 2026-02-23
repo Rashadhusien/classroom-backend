@@ -34,7 +34,7 @@ const getEnrollmentDetails = async (enrollmentId: number) => {
     .leftJoin(subjects, eq(classes.subjectId, subjects.id))
     .leftJoin(departments, eq(subjects.departmentId, departments.id))
     .leftJoin(user, eq(classes.teacherId, user.id))
-    .where(eq(enrollments.id, enrollmentId));
+    .where(eq(enrollments.classId, enrollmentId));
 
   return enrollment;
 };
@@ -82,12 +82,12 @@ router.post("/", async (req, res) => {
     const [createdEnrollment] = await db
       .insert(enrollments)
       .values({ classId, studentId })
-      .returning({ id: enrollments.id });
+      .returning();
 
     if (!createdEnrollment)
       return res.status(500).json({ error: "Failed to create enrollment" });
 
-    const enrollment = await getEnrollmentDetails(createdEnrollment.id);
+    const enrollment = await getEnrollmentDetails(classId);
 
     res.status(201).json({ data: enrollment });
   } catch (error) {
@@ -139,17 +139,222 @@ router.post("/join", async (req, res) => {
     const [createdEnrollment] = await db
       .insert(enrollments)
       .values({ classId: classRecord.id, studentId })
-      .returning({ id: enrollments.id });
+      .returning();
 
     if (!createdEnrollment)
       return res.status(500).json({ error: "Failed to join class" });
 
-    const enrollment = await getEnrollmentDetails(createdEnrollment.id);
+    const enrollment = await getEnrollmentDetails(classRecord.id);
 
     res.status(201).json({ data: enrollment });
   } catch (error) {
     console.error("POST /enrollments/join error:", error);
     res.status(500).json({ error: "Failed to join class" });
+  }
+});
+
+// Get all enrollments (admin only)
+router.get("/", async (req, res) => {
+  try {
+    // Use separate queries to avoid alias conflicts
+    const enrollmentsData = await db
+      .select({
+        id: enrollments.id,
+        studentId: enrollments.studentId,
+        classId: enrollments.classId,
+      })
+      .from(enrollments);
+
+    // Get all related data separately and combine
+    const enrichedEnrollments = await Promise.all(
+      enrollmentsData.map(async (enrollment) => {
+        const [student] = await db
+          .select({
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            image: user.image,
+          })
+          .from(user)
+          .where(eq(user.id, enrollment.studentId));
+
+        const [classRecord] = await db
+          .select()
+          .from(classes)
+          .where(eq(classes.id, enrollment.classId));
+
+        let subject = null;
+        let department = null;
+        let teacher = null;
+
+        if (classRecord) {
+          [subject] = await db
+            .select()
+            .from(subjects)
+            .where(eq(subjects.id, classRecord.subjectId));
+        }
+
+        if (subject) {
+          [department] = await db
+            .select()
+            .from(departments)
+            .where(eq(departments.id, subject.departmentId));
+        }
+
+        if (classRecord) {
+          [teacher] = await db
+            .select({
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              role: user.role,
+              image: user.image,
+            })
+            .from(user)
+            .where(eq(user.id, classRecord.teacherId));
+        }
+
+        return {
+          ...enrollment,
+          student,
+          class: classRecord,
+          subject,
+          department,
+          teacher,
+        };
+      }),
+    );
+
+    res.status(200).json({ data: enrichedEnrollments });
+  } catch (error) {
+    console.error("GET /enrollments error:", error);
+    res.status(500).json({ error: "Failed to fetch enrollments" });
+  }
+});
+
+// Get current user's enrollments (student only)
+router.get("/me", async (req, res) => {
+  try {
+    const { studentId } = req.query;
+
+    if (!studentId) {
+      return res.status(400).json({ error: "studentId is required" });
+    }
+
+    // Use separate queries to avoid alias conflicts
+    const enrollmentsData = await db
+      .select({
+        id: enrollments.id,
+        studentId: enrollments.studentId,
+        classId: enrollments.classId,
+      })
+      .from(enrollments)
+      .where(eq(enrollments.studentId, studentId as string));
+
+    // Get all related data separately and combine
+    const enrichedEnrollments = await Promise.all(
+      enrollmentsData.map(async (enrollment) => {
+        const [student] = await db
+          .select({
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            image: user.image,
+          })
+          .from(user)
+          .where(eq(user.id, enrollment.studentId));
+
+        const [classRecord] = await db
+          .select()
+          .from(classes)
+          .where(eq(classes.id, enrollment.classId));
+
+        let subject = null;
+        let department = null;
+        let teacher = null;
+
+        if (classRecord) {
+          [subject] = await db
+            .select()
+            .from(subjects)
+            .where(eq(subjects.id, classRecord.subjectId));
+        }
+
+        if (subject) {
+          [department] = await db
+            .select()
+            .from(departments)
+            .where(eq(departments.id, subject.departmentId));
+        }
+
+        if (classRecord) {
+          [teacher] = await db
+            .select({
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              role: user.role,
+              image: user.image,
+            })
+            .from(user)
+            .where(eq(user.id, classRecord.teacherId));
+        }
+
+        return {
+          ...enrollment,
+          student,
+          class: classRecord,
+          subject,
+          department,
+          teacher,
+        };
+      }),
+    );
+
+    res.status(200).json({ data: enrichedEnrollments });
+  } catch (error) {
+    console.error("GET /enrollments/me error:", error);
+    res.status(500).json({ error: "Failed to fetch student enrollments" });
+  }
+});
+
+// Delete enrollment
+router.delete("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const enrollmentId = parseInt(id);
+
+    if (isNaN(enrollmentId)) {
+      return res.status(400).json({ error: "Invalid enrollment ID" });
+    }
+
+    const [existingEnrollment] = await db
+      .select()
+      .from(enrollments)
+      .where(eq(enrollments.id, enrollmentId));
+
+    if (!existingEnrollment) {
+      return res.status(404).json({ error: "Enrollment not found" });
+    }
+
+    const [deletedEnrollment] = await db
+      .delete(enrollments)
+      .where(eq(enrollments.id, enrollmentId))
+      .returning({ id: enrollments.id });
+
+    if (!deletedEnrollment) {
+      return res.status(500).json({ error: "Failed to delete enrollment" });
+    }
+
+    res.status(200).json({
+      message: "Enrollment deleted successfully",
+      data: { id: deletedEnrollment.id },
+    });
+  } catch (error) {
+    console.error("DELETE /enrollments/:id error:", error);
+    res.status(500).json({ error: "Failed to delete enrollment" });
   }
 });
 
