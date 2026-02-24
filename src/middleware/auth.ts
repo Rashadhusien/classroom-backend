@@ -1,4 +1,4 @@
-import { auth } from "../lib/auth"; // wherever you configured better-auth
+import { auth } from "../lib/auth.js";
 import { Request, Response, NextFunction } from "express";
 
 export const betterAuthMiddleware = async (
