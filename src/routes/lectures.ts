@@ -3,8 +3,8 @@ import { and, asc, desc, eq, getTableColumns, sql } from "drizzle-orm";
 
 import { db } from "../db/index.js";
 import { classes, lectureContents, lectures } from "../db/schema/app.js";
-import { betterAuthMiddleware } from "../middleware/auth.js";
-import { requireEnrollment } from "../middleware/requireEnrollment.js";
+// import { betterAuthMiddleware } from "../middleware/auth.js";
+// import { requireEnrollment } from "../middleware/requireEnrollment.js";
 
 const router = express.Router();
 
@@ -30,7 +30,7 @@ const getLectureDetails = async (lectureId: number) => {
 // ─── GET / — list lectures for a class ───────────────────────────────────────
 // Required query: ?classId=:id
 
-router.get("/", betterAuthMiddleware, requireEnrollment, async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const { classId, published, page = 1, limit = 50 } = req.query;
 
