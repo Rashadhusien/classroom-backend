@@ -3,7 +3,7 @@ import { asc, eq, getTableColumns, sql } from "drizzle-orm";
 
 import { db } from "../db/index.js";
 import { lectureContents, lectures } from "../db/schema/app.js";
-import { requireEnrollment } from "../middleware/requireEnrollment.js";
+// import { requireEnrollment } from "../middleware/requireEnrollment.js";
 
 const router = express.Router();
 

@@ -3,8 +3,8 @@ import { and, asc, desc, eq, getTableColumns, sql } from "drizzle-orm";
 
 import { db } from "../db/index.js";
 import { classes, lectureContents, lectures } from "../db/schema/app.js";
-import { betterAuthMiddleware } from "../middleware/auth";
-import { requireEnrollment } from "../middleware/requireEnrollment";
+import { betterAuthMiddleware } from "../middleware/auth.js";
+import { requireEnrollment } from "../middleware/requireEnrollment.js";
 
 const router = express.Router();
 
