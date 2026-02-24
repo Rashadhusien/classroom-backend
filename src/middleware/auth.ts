@@ -27,17 +27,3 @@ export const betterAuthMiddleware = async (
     return res.status(401).json({ error: "Invalid session" });
   }
 };
-
-// Extend Express type
-declare global {
-  namespace Express {
-    interface Request {
-      user?: {
-        id: string;
-        email: string;
-        role: "admin" | "teacher" | "student";
-      };
-      classId?: number;
-    }
-  }
-}
