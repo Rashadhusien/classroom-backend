@@ -1,8 +1,13 @@
 import express from "express";
-import { and, asc, desc, eq, getTableColumns, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, sql, inArray } from "drizzle-orm";
 
 import { db } from "../db/index.js";
-import { classes, lectureContents, lectures } from "../db/schema/app.js";
+import {
+  classes,
+  enrollments,
+  lectureContents,
+  lectures,
+} from "../db/schema/app.js";
 // import { betterAuthMiddleware } from "../middleware/auth.js";
 // import { requireEnrollment } from "../middleware/requireEnrollment.js";
 
@@ -26,6 +31,180 @@ const getLectureDetails = async (lectureId: number) => {
 
   return lecture;
 };
+
+// ─── GET /teacher/:teacherId — get all lectures for a teacher ─────────────────────
+
+router.get("/teacher/:teacherId", async (req, res) => {
+  try {
+    const { teacherId } = req.params;
+    const { published, page = 1, limit = 50 } = req.query;
+
+    if (!teacherId) {
+      return res.status(400).json({ error: "teacherId parameter is required" });
+    }
+
+    const currentPage = Math.max(1, +page);
+    const limitPerPage = Math.min(Math.max(1, +limit), 200);
+    const offset = (currentPage - 1) * limitPerPage;
+
+    // Get all classes for this teacher
+    const teacherClasses = await db
+      .select({ id: classes.id })
+      .from(classes)
+      .where(eq(classes.teacherId, teacherId));
+
+    if (teacherClasses.length === 0) {
+      return res.status(200).json({
+        data: [],
+        pagination: {
+          page: currentPage,
+          limit: limitPerPage,
+          total: 0,
+          totalPages: 0,
+        },
+      });
+    }
+
+    const teacherClassIds = teacherClasses.map((cls) => cls.id);
+
+    // Build filter conditions
+    const filterConditions = [sql`${lectures.classId} in ${teacherClassIds}`];
+
+    if (published === "true") {
+      filterConditions.push(eq(lectures.isPublished, true));
+    } else if (published === "false") {
+      filterConditions.push(eq(lectures.isPublished, false));
+    }
+
+    const whereClause = and(...filterConditions);
+
+    // Get total count
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(lectures)
+      .where(whereClause);
+
+    const totalCount = countResult?.count ?? 0;
+
+    // Get lectures with content counts
+    const lecturesList = await db
+      .select({
+        ...getTableColumns(lectures),
+        totalContents: sql<number>`count(${lectureContents.id})`,
+        videoCount: sql<number>`count(case when ${lectureContents.type} = 'video' then 1 end)`,
+        imageCount: sql<number>`count(case when ${lectureContents.type} = 'image' then 1 end)`,
+        documentCount: sql<number>`count(case when ${lectureContents.type} = 'document' then 1 end)`,
+      })
+      .from(lectures)
+      .leftJoin(lectureContents, eq(lectureContents.lectureId, lectures.id))
+      .where(whereClause)
+      .groupBy(lectures.id)
+      .orderBy(asc(lectures.order), asc(lectures.createdAt))
+      .limit(limitPerPage)
+      .offset(offset);
+
+    res.status(200).json({
+      data: lecturesList,
+      pagination: {
+        page: currentPage,
+        limit: limitPerPage,
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limitPerPage),
+      },
+    });
+  } catch (e) {
+    console.error(`GET /lectures/teacher/:teacherId error: ${e}`);
+    res.status(500).json({ error: "Failed to get teacher lectures" });
+  }
+});
+
+// ─── GET /student/:studentId — get all lectures for a student ─────────────────────
+
+router.get("/student/:studentId", async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const { published, page = 1, limit = 50 } = req.query;
+
+    if (!studentId) {
+      return res.status(400).json({ error: "studentId parameter is required" });
+    }
+
+    const currentPage = Math.max(1, +page);
+    const limitPerPage = Math.min(Math.max(1, +limit), 200);
+    const offset = (currentPage - 1) * limitPerPage;
+
+    // Get all enrollments for this student
+    const studentEnrollments = await db
+      .select({ classId: enrollments.classId })
+      .from(enrollments)
+      .where(eq(enrollments.studentId, studentId));
+
+    if (studentEnrollments.length === 0) {
+      return res.status(200).json({
+        data: [],
+        pagination: {
+          page: currentPage,
+          limit: limitPerPage,
+          total: 0,
+          totalPages: 0,
+        },
+      });
+    }
+
+    const enrolledClassIds = studentEnrollments.map(
+      (enrollment) => enrollment.classId,
+    );
+
+    // Build filter conditions
+    const filterConditions = [sql`${lectures.classId} in ${enrolledClassIds}`];
+
+    if (published === "true") {
+      filterConditions.push(eq(lectures.isPublished, true));
+    } else if (published === "false") {
+      filterConditions.push(eq(lectures.isPublished, false));
+    }
+
+    const whereClause = and(...filterConditions);
+
+    // Get total count
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(lectures)
+      .where(whereClause);
+
+    const totalCount = countResult?.count ?? 0;
+
+    // Get lectures with content counts
+    const lecturesList = await db
+      .select({
+        ...getTableColumns(lectures),
+        totalContents: sql<number>`count(${lectureContents.id})`,
+        videoCount: sql<number>`count(case when ${lectureContents.type} = 'video' then 1 end)`,
+        imageCount: sql<number>`count(case when ${lectureContents.type} = 'image' then 1 end)`,
+        documentCount: sql<number>`count(case when ${lectureContents.type} = 'document' then 1 end)`,
+      })
+      .from(lectures)
+      .leftJoin(lectureContents, eq(lectureContents.lectureId, lectures.id))
+      .where(whereClause)
+      .groupBy(lectures.id)
+      .orderBy(asc(lectures.order), asc(lectures.createdAt))
+      .limit(limitPerPage)
+      .offset(offset);
+
+    res.status(200).json({
+      data: lecturesList,
+      pagination: {
+        page: currentPage,
+        limit: limitPerPage,
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limitPerPage),
+      },
+    });
+  } catch (e) {
+    console.error(`GET /lectures/student/:studentId error: ${e}`);
+    res.status(500).json({ error: "Failed to get student lectures" });
+  }
+});
 
 // ─── GET / — list lectures for a class ───────────────────────────────────────
 // Required query: ?classId=:id
