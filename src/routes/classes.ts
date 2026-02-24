@@ -1,22 +1,32 @@
 import express from "express";
-import { and, desc, eq, getTableColumns, ilike, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  getTableColumns,
+  sql,
+  or,
+  ilike,
+} from "drizzle-orm";
 
 import { db } from "../db/index.js";
 import {
   classes,
-  departments,
   enrollments,
-  lectureContents,
-  lectures,
   subjects,
+  departments,
+  lectures,
+  lectureContents,
 } from "../db/schema/app.js";
 import { user } from "../db/schema/auth.js";
+import { betterAuthMiddleware } from "../middleware/auth.js";
 
 const router = express.Router();
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const getClassDetails = async (classId: number) => {
+const getClassDetails = async (classId: number, userId?: string) => {
   const [classDetails] = await db
     .select({
       ...getTableColumns(classes),
@@ -25,15 +35,33 @@ const getClassDetails = async (classId: number) => {
       teacher: { ...getTableColumns(user) },
       totalEnrollments: sql<number>`count(distinct ${enrollments.id})`,
       totalLectures: sql<number>`count(distinct ${lectures.id})`,
+      isEnrolled: userId
+        ? sql<boolean>`exists (select 1 from ${enrollments} where ${enrollments.classId} = ${classes.id} and ${enrollments.studentId} = ${userId})`
+        : sql<boolean>`false`,
     })
     .from(classes)
     .leftJoin(subjects, eq(classes.subjectId, subjects.id))
     .leftJoin(departments, eq(subjects.departmentId, departments.id))
     .leftJoin(user, eq(classes.teacherId, user.id))
-    .leftJoin(enrollments, eq(enrollments.classId, classes.id))
+    .leftJoin(
+      enrollments,
+      userId
+        ? and(
+            eq(enrollments.classId, classes.id),
+            eq(enrollments.studentId, userId),
+          )
+        : eq(enrollments.classId, classes.id),
+    )
     .leftJoin(lectures, eq(lectures.classId, classes.id))
     .where(eq(classes.id, classId))
-    .groupBy(classes.id, subjects.id, departments.id, user.id);
+    .groupBy(
+      classes.id,
+      subjects.id,
+      departments.id,
+      user.id,
+      enrollments.id,
+      lectures.id,
+    );
 
   return classDetails;
 };
@@ -133,15 +161,16 @@ router.get("/", async (req, res) => {
 
 // ─── GET /:id — class detail with relations & counts ─────────────────────────
 
-router.get("/:id", async (req, res) => {
+router.get("/:id", betterAuthMiddleware, async (req, res) => {
   try {
     const classId = Number(req.params.id);
+    const userId = req.user?.id;
 
     if (!Number.isFinite(classId)) {
       return res.status(400).json({ error: "Invalid class id" });
     }
 
-    const classDetails = await getClassDetails(classId);
+    const classDetails = await getClassDetails(classId, userId);
 
     if (!classDetails) {
       return res.status(404).json({ error: "Class not found" });

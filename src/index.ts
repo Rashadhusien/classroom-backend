@@ -39,7 +39,7 @@ app.use("/api/classes", classesRouter);
 app.use("/api/departments", departmentRouter);
 app.use("/api/enrollments", enrollmentsRouter);
 app.use("/api/lectures", lecturesRouter);
-app.use("/api/lecturescontent", lecturescontentRouter);
+app.use("/api/lecture-content", lecturescontentRouter);
 
 app.get("/", (req, res) => {
   res.send("Hello, welcome to the classroom backend!");
