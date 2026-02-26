@@ -80,6 +80,154 @@ router.get("/", async (req, res) => {
   }
 });
 
+// Get subjects for teacher - subjects of classes they teach
+router.get("/teacher", betterAuthMiddleware, async (req, res) => {
+  try {
+    const { search, department, page = 1, limit = 10 } = req.query;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const currentPage = Math.max(1, +page);
+    const limitPerPage = Math.max(1, +limit);
+    const offset = (currentPage - 1) * limitPerPage;
+
+    const filterConditions = [];
+
+    if (search) {
+      filterConditions.push(
+        or(
+          ilike(subjects.name, `%${search}%`),
+          ilike(subjects.code, `%${search}%`),
+        ),
+      );
+    }
+
+    if (department && department !== "all") {
+      filterConditions.push(eq(departments.id, Number(department)));
+    }
+
+    const whereClause =
+      filterConditions.length > 0 ? and(...filterConditions) : undefined;
+
+    // Count query MUST include the joins
+    const countResult = await db
+      .select({ count: sql<number>`count(distinct ${subjects.id})` })
+      .from(subjects)
+      .leftJoin(departments, eq(subjects.departmentId, departments.id))
+      .leftJoin(classes, eq(subjects.id, classes.subjectId))
+      .where(and(whereClause, eq(classes.teacherId, userId)));
+
+    const totalCount = countResult[0]?.count ?? 0;
+
+    // Data query
+    const subjectsList = await db
+      .select({
+        ...getTableColumns(subjects),
+        department: {
+          ...getTableColumns(departments),
+        },
+      })
+      .from(subjects)
+      .leftJoin(departments, eq(subjects.departmentId, departments.id))
+      .leftJoin(classes, eq(subjects.id, classes.subjectId))
+      .where(and(whereClause, eq(classes.teacherId, userId)))
+      .orderBy(desc(subjects.createdAt))
+      .limit(limitPerPage)
+      .offset(offset);
+
+    res.status(200).json({
+      data: subjectsList,
+      pagination: {
+        page: currentPage,
+        limit: limitPerPage,
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limitPerPage),
+      },
+    });
+  } catch (error) {
+    console.error("GET /subjects/teacher error:", error);
+    res.status(500).json({ error: "Failed to fetch teacher subjects" });
+  }
+});
+
+// Get subjects for student - subjects of classes they are enrolled in
+router.get("/student", betterAuthMiddleware, async (req, res) => {
+  try {
+    const { search, department, page = 1, limit = 10 } = req.query;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const currentPage = Math.max(1, +page);
+    const limitPerPage = Math.max(1, +limit);
+    const offset = (currentPage - 1) * limitPerPage;
+
+    const filterConditions = [];
+
+    if (search) {
+      filterConditions.push(
+        or(
+          ilike(subjects.name, `%${search}%`),
+          ilike(subjects.code, `%${search}%`),
+        ),
+      );
+    }
+
+    if (department && department !== "all") {
+      filterConditions.push(eq(departments.id, Number(department)));
+    }
+
+    const whereClause =
+      filterConditions.length > 0 ? and(...filterConditions) : undefined;
+
+    // Count query MUST include the joins
+    const countResult = await db
+      .select({ count: sql<number>`count(distinct ${subjects.id})` })
+      .from(subjects)
+      .leftJoin(departments, eq(subjects.departmentId, departments.id))
+      .leftJoin(classes, eq(subjects.id, classes.subjectId))
+      .leftJoin(enrollments, eq(classes.id, enrollments.classId))
+      .where(and(whereClause, eq(enrollments.studentId, userId)));
+
+    const totalCount = countResult[0]?.count ?? 0;
+
+    // Data query
+    const subjectsList = await db
+      .select({
+        ...getTableColumns(subjects),
+        department: {
+          ...getTableColumns(departments),
+        },
+      })
+      .from(subjects)
+      .leftJoin(departments, eq(subjects.departmentId, departments.id))
+      .leftJoin(classes, eq(subjects.id, classes.subjectId))
+      .leftJoin(enrollments, eq(classes.id, enrollments.classId))
+      .where(and(whereClause, eq(enrollments.studentId, userId)))
+      .orderBy(desc(subjects.createdAt))
+      .limit(limitPerPage)
+      .offset(offset);
+
+    res.status(200).json({
+      data: subjectsList,
+      pagination: {
+        page: currentPage,
+        limit: limitPerPage,
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limitPerPage),
+      },
+    });
+  } catch (error) {
+    console.error("GET /subjects/student error:", error);
+    res.status(500).json({ error: "Failed to fetch student subjects" });
+  }
+});
+
 router.post(
   "/",
   betterAuthMiddleware,

@@ -125,86 +125,81 @@ router.get("/:id", betterAuthMiddleware, async (req, res) => {
 
 // ─── POST / — add a content item to a lecture ────────────────────────────────
 
-router.post(
-  "/",
-  betterAuthMiddleware,
-  requireClassTeacherOrAdmin,
-  async (req, res) => {
-    try {
-      const {
-        lectureId,
+router.post("/", betterAuthMiddleware, async (req, res) => {
+  try {
+    const {
+      lectureId,
+      type,
+      title,
+      url,
+      cldPubId,
+      mimeType,
+      sizeBytes,
+      order,
+    } = req.body;
+
+    if (!lectureId || !type || !title || !url) {
+      return res
+        .status(400)
+        .json({ error: "lectureId, type, title, and url are required" });
+    }
+
+    const parsedLectureId = Number(lectureId);
+    if (!Number.isFinite(parsedLectureId)) {
+      return res.status(400).json({ error: "Invalid lectureId" });
+    }
+
+    if (!["video", "image", "document"].includes(type)) {
+      return res
+        .status(400)
+        .json({ error: "type must be video, image, or document" });
+    }
+
+    const [lectureRecord] = await db
+      .select({ id: lectures.id })
+      .from(lectures)
+      .where(eq(lectures.id, parsedLectureId));
+
+    if (!lectureRecord) {
+      return res.status(404).json({ error: "Lecture not found" });
+    }
+
+    // Auto-assign order if not provided: place at end
+    let resolvedOrder = order;
+    if (resolvedOrder === undefined || resolvedOrder === null) {
+      const [maxOrder] = await db
+        .select({
+          max: sql<number>`coalesce(max(${lectureContents.order}), -1)`,
+        })
+        .from(lectureContents)
+        .where(eq(lectureContents.lectureId, parsedLectureId));
+      resolvedOrder = (maxOrder?.max ?? -1) + 1;
+    }
+
+    const [created] = await db
+      .insert(lectureContents)
+      .values({
+        lectureId: parsedLectureId,
         type,
         title,
         url,
         cldPubId,
         mimeType,
         sizeBytes,
-        order,
-      } = req.body;
+        order: resolvedOrder,
+      })
+      .returning({ ...getTableColumns(lectureContents) });
 
-      if (!lectureId || !type || !title || !url) {
-        return res
-          .status(400)
-          .json({ error: "lectureId, type, title, and url are required" });
-      }
-
-      const parsedLectureId = Number(lectureId);
-      if (!Number.isFinite(parsedLectureId)) {
-        return res.status(400).json({ error: "Invalid lectureId" });
-      }
-
-      if (!["video", "image", "document"].includes(type)) {
-        return res
-          .status(400)
-          .json({ error: "type must be video, image, or document" });
-      }
-
-      const [lectureRecord] = await db
-        .select({ id: lectures.id })
-        .from(lectures)
-        .where(eq(lectures.id, parsedLectureId));
-
-      if (!lectureRecord) {
-        return res.status(404).json({ error: "Lecture not found" });
-      }
-
-      // Auto-assign order if not provided: place at end
-      let resolvedOrder = order;
-      if (resolvedOrder === undefined || resolvedOrder === null) {
-        const [maxOrder] = await db
-          .select({
-            max: sql<number>`coalesce(max(${lectureContents.order}), -1)`,
-          })
-          .from(lectureContents)
-          .where(eq(lectureContents.lectureId, parsedLectureId));
-        resolvedOrder = (maxOrder?.max ?? -1) + 1;
-      }
-
-      const [created] = await db
-        .insert(lectureContents)
-        .values({
-          lectureId: parsedLectureId,
-          type,
-          title,
-          url,
-          cldPubId,
-          mimeType,
-          sizeBytes,
-          order: resolvedOrder,
-        })
-        .returning({ ...getTableColumns(lectureContents) });
-
-      if (!created) {
-        return res.status(500).json({ error: "Failed to create content item" });
-      }
-
-      res.status(201).json({ data: created });
-    } catch (e) {
-      console.error(`POST /lecture-contents error: ${e}`);
-      res.status(500).json({ error: "Failed to create content item" });
+    if (!created) {
+      return res.status(500).json({ error: "Failed to create content item" });
     }
-  },
-);
+
+    res.status(201).json({ data: created });
+  } catch (e) {
+    console.error(`POST /lecture-contents error: ${e}`);
+    res.status(500).json({ error: "Failed to create content item" });
+  }
+});
 
 // ─── PUT /:id — update a content item ────────────────────────────────────────
 

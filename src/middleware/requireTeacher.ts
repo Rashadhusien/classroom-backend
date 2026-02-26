@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { classes } from "../db/schema/app.js";
+import { classes, lectures } from "../db/schema/app.js";
 
 export const requireTeacherOrAdmin = async (
   req: Request,
@@ -41,25 +41,48 @@ export const requireClassTeacherOrAdmin = async (
     }
 
     const { id: userId, role } = req.user;
-    // For POST requests, classId comes from body; for GET requests, it comes from query/params
-    const classId =
-      req.body.classId ||
-      req.query.classId ||
-      req.params.classId ||
-      req.params.id;
 
-    if (!classId) {
-      return res.status(400).json({ error: "Class ID is required" });
-    }
+    // For POST requests to lecture-content, get classId from lectureId
+    if (req.path.includes("lecture-content") && req.method === "POST") {
+      const lectureId = req.body.lectureId;
 
-    const parsedClassId = Number(classId);
-    if (!Number.isFinite(parsedClassId)) {
-      return res.status(400).json({ error: "Invalid class ID" });
+      if (!lectureId) {
+        return res.status(400).json({ error: "Lecture ID is required" });
+      }
+
+      // Get the lecture to find the classId
+      const [lectureRecord] = await db
+        .select({ classId: lectures.classId })
+        .from(lectures)
+        .where(eq(lectures.id, Number(lectureId)));
+
+      if (!lectureRecord) {
+        return res.status(404).json({ error: "Lecture not found" });
+      }
+
+      req.classId = lectureRecord.classId;
+    } else {
+      // For other requests, classId comes from body, query, or params
+      const classId =
+        req.body.classId ||
+        req.query.classId ||
+        req.params.classId ||
+        req.params.id;
+
+      if (!classId) {
+        return res.status(400).json({ error: "Class ID is required" });
+      }
+
+      const parsedClassId = Number(classId);
+      if (!Number.isFinite(parsedClassId)) {
+        return res.status(400).json({ error: "Invalid class ID" });
+      }
+
+      req.classId = parsedClassId;
     }
 
     // Admins can access any class
     if (role === "admin") {
-      req.classId = parsedClassId;
       return next();
     }
 
@@ -68,10 +91,9 @@ export const requireClassTeacherOrAdmin = async (
       const [classRecord] = await db
         .select({ teacherId: classes.teacherId })
         .from(classes)
-        .where(eq(classes.id, parsedClassId));
+        .where(eq(classes.id, req.classId!));
 
       if (classRecord?.teacherId === userId) {
-        req.classId = parsedClassId;
         return next();
       }
 

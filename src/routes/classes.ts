@@ -118,8 +118,7 @@ router.get("/", async (req, res) => {
       filterConditions.push(eq(classes.status, status as any));
     }
 
-    const whereClause =
-      filterConditions.length > 0 ? and(...filterConditions) : undefined;
+    const whereClause = and(...filterConditions);
 
     const [countResult] = await db
       .select({ count: sql<number>`count(*)` })
@@ -161,6 +160,201 @@ router.get("/", async (req, res) => {
   } catch (e) {
     console.error(`GET /classes error: ${e}`);
     res.status(500).json({ error: "Failed to get classes" });
+  }
+});
+
+// ─── GET /teacher — classes for authenticated teacher ─────────────────────────
+
+router.get("/teacher", betterAuthMiddleware, async (req, res) => {
+  try {
+    const {
+      search,
+      subject,
+      teacher,
+      status,
+      page = 1,
+      limit = 10,
+    } = req.query;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const currentPage = Math.max(1, parseInt(String(page), 10) || 1);
+    const limitPerPage = Math.min(
+      Math.max(1, parseInt(String(limit), 10) || 10),
+      100,
+    );
+    const offset = (currentPage - 1) * limitPerPage;
+
+    const filterConditions = [eq(classes.teacherId, userId)];
+
+    if (search) {
+      filterConditions.push(
+        or(
+          ilike(classes.name, `%${search}%`),
+          ilike(classes.inviteCode, `%${search}%`),
+        )!,
+      );
+    }
+
+    if (subject) {
+      filterConditions.push(
+        ilike(subjects.name, `%${String(subject).replace(/[%_]/g, "\\$&")}%`),
+      );
+    }
+
+    if (teacher) {
+      filterConditions.push(
+        ilike(user.name, `%${String(teacher).replace(/[%_]/g, "\\$&")}%`),
+      );
+    }
+
+    if (status) {
+      filterConditions.push(eq(classes.status, status as any));
+    }
+
+    const whereClause = and(...filterConditions);
+
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(classes)
+      .leftJoin(subjects, eq(classes.subjectId, subjects.id))
+      .leftJoin(user, eq(classes.teacherId, user.id))
+      .where(whereClause);
+
+    const totalCount = countResult?.count ?? 0;
+
+    const classesList = await db
+      .select({
+        ...getTableColumns(classes),
+        subject: { ...getTableColumns(subjects) },
+        teacher: { ...getTableColumns(user) },
+        totalEnrollments: sql<number>`count(distinct ${enrollments.id})`,
+        totalLectures: sql<number>`count(distinct ${lectures.id})`,
+      })
+      .from(classes)
+      .leftJoin(subjects, eq(classes.subjectId, subjects.id))
+      .leftJoin(user, eq(classes.teacherId, user.id))
+      .leftJoin(enrollments, eq(enrollments.classId, classes.id))
+      .leftJoin(lectures, eq(lectures.classId, classes.id))
+      .where(whereClause)
+      .groupBy(classes.id, subjects.id, user.id)
+      .orderBy(desc(classes.createdAt))
+      .limit(limitPerPage)
+      .offset(offset);
+
+    res.status(200).json({
+      data: classesList,
+      pagination: {
+        page: currentPage,
+        limit: limitPerPage,
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limitPerPage),
+      },
+    });
+  } catch (e) {
+    console.error(`GET /classes/teacher error: ${e}`);
+    res.status(500).json({ error: "Failed to get teacher classes" });
+  }
+});
+
+// ─── GET /student — classes for authenticated student ─────────────────────────
+
+router.get("/student", betterAuthMiddleware, async (req, res) => {
+  try {
+    const {
+      search,
+      subject,
+      teacher,
+      status,
+      page = 1,
+      limit = 10,
+    } = req.query;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const currentPage = Math.max(1, parseInt(String(page), 10) || 1);
+    const limitPerPage = Math.min(
+      Math.max(1, parseInt(String(limit), 10) || 10),
+      100,
+    );
+    const offset = (currentPage - 1) * limitPerPage;
+
+    const filterConditions = [eq(enrollments.studentId, userId)];
+
+    if (search) {
+      filterConditions.push(
+        or(
+          ilike(classes.name, `%${search}%`),
+          ilike(classes.inviteCode, `%${search}%`),
+        )!,
+      );
+    }
+
+    if (subject) {
+      filterConditions.push(
+        ilike(subjects.name, `%${String(subject).replace(/[%_]/g, "\\$&")}%`),
+      );
+    }
+
+    if (teacher) {
+      filterConditions.push(
+        ilike(user.name, `%${String(teacher).replace(/[%_]/g, "\\$&")}%`),
+      );
+    }
+
+    if (status) {
+      filterConditions.push(eq(classes.status, status as any));
+    }
+
+    const whereClause = and(...filterConditions);
+
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(classes)
+      .leftJoin(subjects, eq(classes.subjectId, subjects.id))
+      .leftJoin(user, eq(classes.teacherId, user.id))
+      .leftJoin(enrollments, eq(enrollments.classId, classes.id))
+      .where(whereClause);
+
+    const totalCount = countResult?.count ?? 0;
+
+    const classesList = await db
+      .select({
+        ...getTableColumns(classes),
+        subject: { ...getTableColumns(subjects) },
+        teacher: { ...getTableColumns(user) },
+        totalEnrollments: sql<number>`count(distinct ${enrollments.id})`,
+        totalLectures: sql<number>`count(distinct ${lectures.id})`,
+      })
+      .from(classes)
+      .leftJoin(subjects, eq(classes.subjectId, subjects.id))
+      .leftJoin(user, eq(classes.teacherId, user.id))
+      .leftJoin(enrollments, eq(enrollments.classId, classes.id))
+      .leftJoin(lectures, eq(lectures.classId, classes.id))
+      .where(whereClause)
+      .groupBy(classes.id, subjects.id, user.id)
+      .orderBy(desc(classes.createdAt))
+      .limit(limitPerPage)
+      .offset(offset);
+
+    res.status(200).json({
+      data: classesList,
+      pagination: {
+        page: currentPage,
+        limit: limitPerPage,
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limitPerPage),
+      },
+    });
+  } catch (e) {
+    console.error(`GET /classes/student error: ${e}`);
+    res.status(500).json({ error: "Failed to get student classes" });
   }
 });
 
