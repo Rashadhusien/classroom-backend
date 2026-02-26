@@ -9,6 +9,8 @@ import {
   subjects,
   user,
 } from "../db/schema/index.js";
+import { betterAuthMiddleware } from "../middleware/auth.js";
+import { requireTeacherOrAdmin } from "../middleware/requireTeacher.js";
 
 const router = express.Router();
 
@@ -40,61 +42,67 @@ const getEnrollmentDetails = async (enrollmentId: number) => {
 };
 
 // Create enrollment
-router.post("/", async (req, res) => {
-  try {
-    const { classId, studentId } = req.body;
+router.post(
+  "/",
+  betterAuthMiddleware,
+  requireTeacherOrAdmin,
+  async (req, res) => {
+    try {
+      const { classId, studentId } = req.body;
 
-    if (!classId || !studentId) {
-      return res
-        .status(400)
-        .json({ error: "classId and studentId are required" });
+      if (!classId || !studentId) {
+        return res
+          .status(400)
+          .json({ error: "classId and studentId are required" });
+      }
+
+      const [classRecord] = await db
+        .select()
+        .from(classes)
+        .where(eq(classes.id, classId));
+
+      if (!classRecord)
+        return res.status(404).json({ error: "Class not found" });
+
+      const [student] = await db
+        .select()
+        .from(user)
+        .where(eq(user.id, studentId));
+
+      if (!student) return res.status(404).json({ error: "Student not found" });
+
+      const [existingEnrollment] = await db
+        .select({ id: enrollments.id })
+        .from(enrollments)
+        .where(
+          and(
+            eq(enrollments.classId, classId),
+            eq(enrollments.studentId, studentId),
+          ),
+        );
+
+      if (existingEnrollment)
+        return res
+          .status(409)
+          .json({ error: "Student already enrolled in class" });
+
+      const [createdEnrollment] = await db
+        .insert(enrollments)
+        .values({ classId, studentId })
+        .returning();
+
+      if (!createdEnrollment)
+        return res.status(500).json({ error: "Failed to create enrollment" });
+
+      const enrollment = await getEnrollmentDetails(classId);
+
+      res.status(201).json({ data: enrollment });
+    } catch (error) {
+      console.error("POST /enrollments error:", error);
+      res.status(500).json({ error: "Failed to create enrollment" });
     }
-
-    const [classRecord] = await db
-      .select()
-      .from(classes)
-      .where(eq(classes.id, classId));
-
-    if (!classRecord) return res.status(404).json({ error: "Class not found" });
-
-    const [student] = await db
-      .select()
-      .from(user)
-      .where(eq(user.id, studentId));
-
-    if (!student) return res.status(404).json({ error: "Student not found" });
-
-    const [existingEnrollment] = await db
-      .select({ id: enrollments.id })
-      .from(enrollments)
-      .where(
-        and(
-          eq(enrollments.classId, classId),
-          eq(enrollments.studentId, studentId),
-        ),
-      );
-
-    if (existingEnrollment)
-      return res
-        .status(409)
-        .json({ error: "Student already enrolled in class" });
-
-    const [createdEnrollment] = await db
-      .insert(enrollments)
-      .values({ classId, studentId })
-      .returning();
-
-    if (!createdEnrollment)
-      return res.status(500).json({ error: "Failed to create enrollment" });
-
-    const enrollment = await getEnrollmentDetails(classId);
-
-    res.status(201).json({ data: enrollment });
-  } catch (error) {
-    console.error("POST /enrollments error:", error);
-    res.status(500).json({ error: "Failed to create enrollment" });
-  }
-});
+  },
+);
 
 // Join class by invite code
 router.post("/join", async (req, res) => {
@@ -321,41 +329,46 @@ router.get("/me", async (req, res) => {
 });
 
 // Delete enrollment
-router.delete("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const enrollmentId = parseInt(id);
+router.delete(
+  "/:id",
+  betterAuthMiddleware,
+  requireTeacherOrAdmin,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const enrollmentId = parseInt(id as string);
 
-    if (isNaN(enrollmentId)) {
-      return res.status(400).json({ error: "Invalid enrollment ID" });
+      if (isNaN(enrollmentId)) {
+        return res.status(400).json({ error: "Invalid enrollment ID" });
+      }
+
+      const [existingEnrollment] = await db
+        .select()
+        .from(enrollments)
+        .where(eq(enrollments.id, enrollmentId));
+
+      if (!existingEnrollment) {
+        return res.status(404).json({ error: "Enrollment not found" });
+      }
+
+      const [deletedEnrollment] = await db
+        .delete(enrollments)
+        .where(eq(enrollments.id, enrollmentId))
+        .returning({ id: enrollments.id });
+
+      if (!deletedEnrollment) {
+        return res.status(500).json({ error: "Failed to delete enrollment" });
+      }
+
+      res.status(200).json({
+        message: "Enrollment deleted successfully",
+        data: { id: deletedEnrollment.id },
+      });
+    } catch (error) {
+      console.error("DELETE /enrollments/:id error:", error);
+      res.status(500).json({ error: "Failed to delete enrollment" });
     }
-
-    const [existingEnrollment] = await db
-      .select()
-      .from(enrollments)
-      .where(eq(enrollments.id, enrollmentId));
-
-    if (!existingEnrollment) {
-      return res.status(404).json({ error: "Enrollment not found" });
-    }
-
-    const [deletedEnrollment] = await db
-      .delete(enrollments)
-      .where(eq(enrollments.id, enrollmentId))
-      .returning({ id: enrollments.id });
-
-    if (!deletedEnrollment) {
-      return res.status(500).json({ error: "Failed to delete enrollment" });
-    }
-
-    res.status(200).json({
-      message: "Enrollment deleted successfully",
-      data: { id: deletedEnrollment.id },
-    });
-  } catch (error) {
-    console.error("DELETE /enrollments/:id error:", error);
-    res.status(500).json({ error: "Failed to delete enrollment" });
-  }
-});
+  },
+);
 
 export default router;

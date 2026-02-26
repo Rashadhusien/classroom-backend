@@ -9,6 +9,8 @@ import {
   subjects,
   user,
 } from "../db/schema/index.js";
+import { betterAuthMiddleware } from "../middleware/auth.js";
+import { requireTeacherOrAdmin } from "../middleware/requireTeacher.js";
 
 const router = express.Router();
 
@@ -78,23 +80,28 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
-  try {
-    const { departmentId, name, code, description } = req.body;
+router.post(
+  "/",
+  betterAuthMiddleware,
+  requireTeacherOrAdmin,
+  async (req, res) => {
+    try {
+      const { departmentId, name, code, description } = req.body;
 
-    const [createdSubject] = await db
-      .insert(subjects)
-      .values({ departmentId, name, code, description })
-      .returning({ id: subjects.id });
+      const [createdSubject] = await db
+        .insert(subjects)
+        .values({ departmentId, name, code, description })
+        .returning({ id: subjects.id });
 
-    if (!createdSubject) throw Error;
+      if (!createdSubject) throw Error;
 
-    res.status(201).json({ data: createdSubject });
-  } catch (error) {
-    console.error("POST /subjects error:", error);
-    res.status(500).json({ error: "Failed to create subject" });
-  }
-});
+      res.status(201).json({ data: createdSubject });
+    } catch (error) {
+      console.error("POST /subjects error:", error);
+      res.status(500).json({ error: "Failed to create subject" });
+    }
+  },
+);
 
 // Get subject details with counts
 router.get("/:id", async (req, res) => {

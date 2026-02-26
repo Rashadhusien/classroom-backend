@@ -9,6 +9,8 @@ import {
   subjects,
   user,
 } from "../db/schema/index.js";
+import { betterAuthMiddleware } from "../middleware/auth.js";
+import { requireTeacherOrAdmin } from "../middleware/requireTeacher.js";
 
 const router = express.Router();
 
@@ -70,23 +72,28 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
-  try {
-    const { code, name, description } = req.body;
+router.post(
+  "/",
+  betterAuthMiddleware,
+  requireTeacherOrAdmin,
+  async (req, res) => {
+    try {
+      const { code, name, description } = req.body;
 
-    const [createdDepartment] = await db
-      .insert(departments)
-      .values({ code, name, description })
-      .returning({ id: departments.id });
+      const [createdDepartment] = await db
+        .insert(departments)
+        .values({ code, name, description })
+        .returning({ id: departments.id });
 
-    if (!createdDepartment) throw Error;
+      if (!createdDepartment) throw Error;
 
-    res.status(201).json({ data: createdDepartment });
-  } catch (error) {
-    console.error("POST /departments error:", error);
-    res.status(500).json({ error: "Failed to create department" });
-  }
-});
+      res.status(201).json({ data: createdDepartment });
+    } catch (error) {
+      console.error("POST /departments error:", error);
+      res.status(500).json({ error: "Failed to create department" });
+    }
+  },
+);
 
 // Get department details with counts
 router.get("/:id", async (req, res) => {

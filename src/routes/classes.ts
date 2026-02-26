@@ -20,7 +20,12 @@ import {
   lectureContents,
 } from "../db/schema/app.js";
 import { user } from "../db/schema/auth.js";
-// import { betterAuthMiddleware } from "../middleware/auth.js";
+import { betterAuthMiddleware } from "../middleware/auth.js";
+import { requireEnrollment } from "../middleware/requireEnrollment.js";
+import {
+  requireTeacherOrAdmin,
+  requireClassTeacherOrAdmin,
+} from "../middleware/requireTeacher.js";
 
 const router = express.Router();
 
@@ -161,7 +166,7 @@ router.get("/", async (req, res) => {
 
 // ─── GET /:id — class detail with relations & counts ─────────────────────────
 
-router.get("/:id", async (req, res) => {
+router.get("/:id", betterAuthMiddleware, async (req, res) => {
   try {
     const classId = Number(req.params.id);
     const userId = req.user?.id;
@@ -185,7 +190,7 @@ router.get("/:id", async (req, res) => {
 
 // ─── GET /:id/enrollments — students enrolled in a class ─────────────────────
 
-router.get("/:id/enrollments", async (req, res) => {
+router.get("/:id/enrollments", betterAuthMiddleware, async (req, res) => {
   try {
     const classId = Number(req.params.id);
     const { page = 1, limit = 10 } = req.query;
@@ -242,220 +247,240 @@ router.get("/:id/enrollments", async (req, res) => {
 // ─── GET /:id/lectures — published lectures for a class ──────────────────────
 // Accepts ?published=true|false to filter. Default returns all for dashboard.
 
-router.get("/:id/lectures", async (req, res) => {
-  try {
-    const classId = Number(req.params.id);
-    const { published, page = 1, limit = 50 } = req.query;
+router.get(
+  "/:id/lectures",
+  betterAuthMiddleware,
+  requireEnrollment,
+  async (req, res) => {
+    try {
+      const classId = Number(req.params.id);
+      const { published, page = 1, limit = 50 } = req.query;
 
-    if (!Number.isFinite(classId)) {
-      return res.status(400).json({ error: "Invalid class id" });
+      if (!Number.isFinite(classId)) {
+        return res.status(400).json({ error: "Invalid class id" });
+      }
+
+      const currentPage = Math.max(1, +page);
+      const limitPerPage = Math.min(Math.max(1, +limit), 200);
+      const offset = (currentPage - 1) * limitPerPage;
+
+      const filterConditions = [eq(lectures.classId, classId)];
+
+      if (published === "true") {
+        filterConditions.push(eq(lectures.isPublished, true));
+      } else if (published === "false") {
+        filterConditions.push(eq(lectures.isPublished, false));
+      }
+
+      const whereClause = and(...filterConditions);
+
+      const [countResult] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(lectures)
+        .where(whereClause);
+
+      const totalCount = countResult?.count ?? 0;
+
+      const lecturesList = await db
+        .select({
+          ...getTableColumns(lectures),
+          totalContents: sql<number>`count(${lectureContents.id})`,
+          videoCount: sql<number>`count(case when ${lectureContents.type} = 'video' then 1 end)`,
+          imageCount: sql<number>`count(case when ${lectureContents.type} = 'image' then 1 end)`,
+          documentCount: sql<number>`count(case when ${lectureContents.type} = 'document' then 1 end)`,
+        })
+        .from(lectures)
+        .leftJoin(lectureContents, eq(lectureContents.lectureId, lectures.id))
+        .where(whereClause)
+        .groupBy(lectures.id)
+        .orderBy(lectures.order, lectures.createdAt)
+        .limit(limitPerPage)
+        .offset(offset);
+
+      res.status(200).json({
+        data: lecturesList,
+        pagination: {
+          page: currentPage,
+          limit: limitPerPage,
+          total: totalCount,
+          totalPages: Math.ceil(totalCount / limitPerPage),
+        },
+      });
+    } catch (e) {
+      console.error(`GET /classes/:id/lectures error: ${e}`);
+      res.status(500).json({ error: "Failed to get class lectures" });
     }
-
-    const currentPage = Math.max(1, +page);
-    const limitPerPage = Math.min(Math.max(1, +limit), 200);
-    const offset = (currentPage - 1) * limitPerPage;
-
-    const filterConditions = [eq(lectures.classId, classId)];
-
-    if (published === "true") {
-      filterConditions.push(eq(lectures.isPublished, true));
-    } else if (published === "false") {
-      filterConditions.push(eq(lectures.isPublished, false));
-    }
-
-    const whereClause = and(...filterConditions);
-
-    const [countResult] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(lectures)
-      .where(whereClause);
-
-    const totalCount = countResult?.count ?? 0;
-
-    const lecturesList = await db
-      .select({
-        ...getTableColumns(lectures),
-        totalContents: sql<number>`count(${lectureContents.id})`,
-        videoCount: sql<number>`count(case when ${lectureContents.type} = 'video' then 1 end)`,
-        imageCount: sql<number>`count(case when ${lectureContents.type} = 'image' then 1 end)`,
-        documentCount: sql<number>`count(case when ${lectureContents.type} = 'document' then 1 end)`,
-      })
-      .from(lectures)
-      .leftJoin(lectureContents, eq(lectureContents.lectureId, lectures.id))
-      .where(whereClause)
-      .groupBy(lectures.id)
-      .orderBy(lectures.order, lectures.createdAt)
-      .limit(limitPerPage)
-      .offset(offset);
-
-    res.status(200).json({
-      data: lecturesList,
-      pagination: {
-        page: currentPage,
-        limit: limitPerPage,
-        total: totalCount,
-        totalPages: Math.ceil(totalCount / limitPerPage),
-      },
-    });
-  } catch (e) {
-    console.error(`GET /classes/:id/lectures error: ${e}`);
-    res.status(500).json({ error: "Failed to get class lectures" });
-  }
-});
+  },
+);
 
 // ─── POST / — create a class ─────────────────────────────────────────────────
 
-router.post("/", async (req, res) => {
-  try {
-    const {
-      subjectId,
-      teacherId,
-      name,
-      description,
-      capacity,
-      status,
-      schedules,
-      bannerUrl,
-      bannerCldPubId,
-    } = req.body;
-
-    if (!subjectId || !teacherId || !name) {
-      return res
-        .status(400)
-        .json({ error: "subjectId, teacherId, and name are required" });
-    }
-
-    // Generate a short unique invite code
-    const inviteCode = Math.random().toString(36).substring(2, 9);
-
-    const [createdClass] = await db
-      .insert(classes)
-      .values({
+router.post(
+  "/",
+  betterAuthMiddleware,
+  requireTeacherOrAdmin,
+  async (req, res) => {
+    try {
+      const {
         subjectId,
         teacherId,
         name,
         description,
-        capacity: capacity ?? 50,
-        status: status ?? "active",
-        schedules: schedules ?? [],
-        inviteCode,
+        capacity,
+        status,
+        schedules,
         bannerUrl,
         bannerCldPubId,
-      })
-      .returning({ id: classes.id });
+      } = req.body;
 
-    if (!createdClass) {
-      return res.status(500).json({ error: "Failed to create class" });
+      if (!subjectId || !teacherId || !name) {
+        return res
+          .status(400)
+          .json({ error: "subjectId, teacherId, and name are required" });
+      }
+
+      // Generate a short unique invite code
+      const inviteCode = Math.random().toString(36).substring(2, 9);
+
+      const [createdClass] = await db
+        .insert(classes)
+        .values({
+          subjectId,
+          teacherId,
+          name,
+          description,
+          capacity: capacity ?? 50,
+          status: status ?? "active",
+          schedules: schedules ?? [],
+          inviteCode,
+          bannerUrl,
+          bannerCldPubId,
+        })
+        .returning({ id: classes.id });
+
+      if (!createdClass) {
+        return res.status(500).json({ error: "Failed to create class" });
+      }
+
+      const classDetails = await getClassDetails(createdClass.id);
+
+      res.status(201).json({ data: classDetails });
+    } catch (e) {
+      console.error(`POST /classes error: ${e}`);
+      res.status(500).json({ error: "Failed to create class" });
     }
-
-    const classDetails = await getClassDetails(createdClass.id);
-
-    res.status(201).json({ data: classDetails });
-  } catch (e) {
-    console.error(`POST /classes error: ${e}`);
-    res.status(500).json({ error: "Failed to create class" });
-  }
-});
+  },
+);
 
 // ─── PUT /:id — update a class ────────────────────────────────────────────────
 
-router.put("/:id", async (req, res) => {
-  try {
-    const classId = Number(req.params.id);
+router.put(
+  "/:id",
+  betterAuthMiddleware,
+  requireClassTeacherOrAdmin,
+  async (req, res) => {
+    try {
+      const classId = Number(req.params.id);
 
-    if (!Number.isFinite(classId)) {
-      return res.status(400).json({ error: "Invalid class id" });
+      if (!Number.isFinite(classId)) {
+        return res.status(400).json({ error: "Invalid class id" });
+      }
+
+      const [existing] = await db
+        .select({ id: classes.id })
+        .from(classes)
+        .where(eq(classes.id, classId));
+
+      if (!existing) {
+        return res.status(404).json({ error: "Class not found" });
+      }
+
+      const {
+        subjectId,
+        teacherId,
+        name,
+        description,
+        capacity,
+        status,
+        schedules,
+        bannerUrl,
+        bannerCldPubId,
+        inviteCode,
+      } = req.body;
+
+      const [updated] = await db
+        .update(classes)
+        .set({
+          ...(subjectId !== undefined && { subjectId }),
+          ...(teacherId !== undefined && { teacherId }),
+          ...(name !== undefined && { name }),
+          ...(description !== undefined && { description }),
+          ...(capacity !== undefined && { capacity }),
+          ...(status !== undefined && { status }),
+          ...(schedules !== undefined && { schedules }),
+          ...(bannerUrl !== undefined && { bannerUrl }),
+          ...(bannerCldPubId !== undefined && { bannerCldPubId }),
+          ...(inviteCode !== undefined && { inviteCode }),
+        })
+        .where(eq(classes.id, classId))
+        .returning({ id: classes.id });
+
+      if (!updated) {
+        return res.status(500).json({ error: "Failed to update class" });
+      }
+
+      const classDetails = await getClassDetails(classId);
+
+      res.status(200).json({ data: classDetails });
+    } catch (e) {
+      console.error(`PUT /classes/:id error: ${e}`);
+      res.status(500).json({ error: "Failed to update class" });
     }
-
-    const [existing] = await db
-      .select({ id: classes.id })
-      .from(classes)
-      .where(eq(classes.id, classId));
-
-    if (!existing) {
-      return res.status(404).json({ error: "Class not found" });
-    }
-
-    const {
-      subjectId,
-      teacherId,
-      name,
-      description,
-      capacity,
-      status,
-      schedules,
-      bannerUrl,
-      bannerCldPubId,
-      inviteCode,
-    } = req.body;
-
-    const [updated] = await db
-      .update(classes)
-      .set({
-        ...(subjectId !== undefined && { subjectId }),
-        ...(teacherId !== undefined && { teacherId }),
-        ...(name !== undefined && { name }),
-        ...(description !== undefined && { description }),
-        ...(capacity !== undefined && { capacity }),
-        ...(status !== undefined && { status }),
-        ...(schedules !== undefined && { schedules }),
-        ...(bannerUrl !== undefined && { bannerUrl }),
-        ...(bannerCldPubId !== undefined && { bannerCldPubId }),
-        ...(inviteCode !== undefined && { inviteCode }),
-      })
-      .where(eq(classes.id, classId))
-      .returning({ id: classes.id });
-
-    if (!updated) {
-      return res.status(500).json({ error: "Failed to update class" });
-    }
-
-    const classDetails = await getClassDetails(classId);
-
-    res.status(200).json({ data: classDetails });
-  } catch (e) {
-    console.error(`PUT /classes/:id error: ${e}`);
-    res.status(500).json({ error: "Failed to update class" });
-  }
-});
+  },
+);
 
 // ─── DELETE /:id — delete a class ────────────────────────────────────────────
 
-router.delete("/:id", async (req, res) => {
-  try {
-    const classId = Number(req.params.id);
+router.delete(
+  "/:id",
+  betterAuthMiddleware,
+  requireClassTeacherOrAdmin,
+  async (req, res) => {
+    try {
+      const classId = Number(req.params.id);
 
-    if (!Number.isFinite(classId)) {
-      return res.status(400).json({ error: "Invalid class id" });
+      if (!Number.isFinite(classId)) {
+        return res.status(400).json({ error: "Invalid class id" });
+      }
+
+      const [existing] = await db
+        .select({ id: classes.id })
+        .from(classes)
+        .where(eq(classes.id, classId));
+
+      if (!existing) {
+        return res.status(404).json({ error: "Class not found" });
+      }
+
+      // enrollments and lectures cascade-delete via FK onDelete: cascade
+      const [deleted] = await db
+        .delete(classes)
+        .where(eq(classes.id, classId))
+        .returning({ id: classes.id });
+
+      if (!deleted) {
+        return res.status(500).json({ error: "Failed to delete class" });
+      }
+
+      res.status(200).json({
+        message: "Class deleted successfully",
+        data: { id: deleted.id },
+      });
+    } catch (e) {
+      console.error(`DELETE /classes/:id error: ${e}`);
+      res.status(500).json({ error: "Failed to delete class" });
     }
-
-    const [existing] = await db
-      .select({ id: classes.id })
-      .from(classes)
-      .where(eq(classes.id, classId));
-
-    if (!existing) {
-      return res.status(404).json({ error: "Class not found" });
-    }
-
-    // enrollments and lectures cascade-delete via FK onDelete: cascade
-    const [deleted] = await db
-      .delete(classes)
-      .where(eq(classes.id, classId))
-      .returning({ id: classes.id });
-
-    if (!deleted) {
-      return res.status(500).json({ error: "Failed to delete class" });
-    }
-
-    res.status(200).json({
-      message: "Class deleted successfully",
-      data: { id: deleted.id },
-    });
-  } catch (e) {
-    console.error(`DELETE /classes/:id error: ${e}`);
-    res.status(500).json({ error: "Failed to delete class" });
-  }
-});
+  },
+);
 
 export default router;
