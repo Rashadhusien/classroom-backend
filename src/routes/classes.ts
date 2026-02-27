@@ -165,7 +165,7 @@ router.get("/", async (req, res) => {
 
 // ─── GET /teacher — classes for authenticated teacher ─────────────────────────
 
-router.get("/teacher", betterAuthMiddleware, async (req, res) => {
+router.get("/teacher", async (req, res) => {
   try {
     const {
       search,
@@ -262,7 +262,7 @@ router.get("/teacher", betterAuthMiddleware, async (req, res) => {
 
 // ─── GET /student — classes for authenticated student ─────────────────────────
 
-router.get("/student", betterAuthMiddleware, async (req, res) => {
+router.get("/student", async (req, res) => {
   try {
     const {
       search,
@@ -360,7 +360,7 @@ router.get("/student", betterAuthMiddleware, async (req, res) => {
 
 // ─── GET /:id — class detail with relations & counts ─────────────────────────
 
-router.get("/:id", betterAuthMiddleware, async (req, res) => {
+router.get("/:id", async (req, res) => {
   try {
     const classId = Number(req.params.id);
     const userId = req.user?.id;
@@ -384,7 +384,7 @@ router.get("/:id", betterAuthMiddleware, async (req, res) => {
 
 // ─── GET /:id/enrollments — students enrolled in a class ─────────────────────
 
-router.get("/:id/enrollments", betterAuthMiddleware, async (req, res) => {
+router.get("/:id/enrollments", async (req, res) => {
   try {
     const classId = Number(req.params.id);
     const { page = 1, limit = 10 } = req.query;
@@ -443,7 +443,7 @@ router.get("/:id/enrollments", betterAuthMiddleware, async (req, res) => {
 
 router.get(
   "/:id/lectures",
-  betterAuthMiddleware,
+
   requireEnrollment,
   async (req, res) => {
     try {
@@ -511,7 +511,7 @@ router.get(
 
 router.post(
   "/",
-  betterAuthMiddleware,
+
   requireTeacherOrAdmin,
   async (req, res) => {
     try {
@@ -570,7 +570,7 @@ router.post(
 
 router.put(
   "/:id",
-  betterAuthMiddleware,
+
   requireClassTeacherOrAdmin,
   async (req, res) => {
     try {
@@ -637,7 +637,7 @@ router.put(
 
 router.delete(
   "/:id",
-  betterAuthMiddleware,
+
   requireClassTeacherOrAdmin,
   async (req, res) => {
     try {

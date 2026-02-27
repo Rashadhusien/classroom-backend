@@ -12,7 +12,7 @@ const router = express.Router();
 // ─── GET / — list all content items for a lecture ────────────────────────────
 // Required query: ?lectureId=:id
 
-router.get("/", betterAuthMiddleware, async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const { lectureId } = req.query;
 
@@ -70,7 +70,7 @@ router.get("/", betterAuthMiddleware, async (req, res) => {
 
 // ─── GET /:id — single content item ──────────────────────────────────────────
 
-router.get("/:id", betterAuthMiddleware, async (req, res) => {
+router.get("/:id", async (req, res) => {
   try {
     const contentId = Number(req.params.id);
 
@@ -125,7 +125,7 @@ router.get("/:id", betterAuthMiddleware, async (req, res) => {
 
 // ─── POST / — add a content item to a lecture ────────────────────────────────
 
-router.post("/", betterAuthMiddleware, async (req, res) => {
+router.post("/", async (req, res) => {
   try {
     const {
       lectureId,
@@ -203,155 +203,140 @@ router.post("/", betterAuthMiddleware, async (req, res) => {
 
 // ─── PUT /:id — update a content item ────────────────────────────────────────
 
-router.put(
-  "/:id",
-  betterAuthMiddleware,
-  requireClassTeacherOrAdmin,
-  async (req, res) => {
-    try {
-      const contentId = Number(req.params.id);
+router.put("/:id", requireClassTeacherOrAdmin, async (req, res) => {
+  try {
+    const contentId = Number(req.params.id);
 
-      if (!Number.isFinite(contentId)) {
-        return res.status(400).json({ error: "Invalid content id" });
-      }
-
-      const [existing] = await db
-        .select({ id: lectureContents.id })
-        .from(lectureContents)
-        .where(eq(lectureContents.id, contentId));
-
-      if (!existing) {
-        return res.status(404).json({ error: "Content item not found" });
-      }
-
-      const { title, url, cldPubId, mimeType, sizeBytes, order } = req.body;
-
-      // Note: type is intentionally excluded — changing type would require
-      // re-validation of url/cldPubId. Delete and re-create instead.
-      const [updated] = await db
-        .update(lectureContents)
-        .set({
-          ...(title !== undefined && { title }),
-          ...(url !== undefined && { url }),
-          ...(cldPubId !== undefined && { cldPubId }),
-          ...(mimeType !== undefined && { mimeType }),
-          ...(sizeBytes !== undefined && { sizeBytes }),
-          ...(order !== undefined && { order }),
-        })
-        .where(eq(lectureContents.id, contentId))
-        .returning({ ...getTableColumns(lectureContents) });
-
-      if (!updated) {
-        return res.status(500).json({ error: "Failed to update content item" });
-      }
-
-      res.status(200).json({ data: updated });
-    } catch (e) {
-      console.error(`PUT /lecture-contents/:id error: ${e}`);
-      res.status(500).json({ error: "Failed to update content item" });
+    if (!Number.isFinite(contentId)) {
+      return res.status(400).json({ error: "Invalid content id" });
     }
-  },
-);
+
+    const [existing] = await db
+      .select({ id: lectureContents.id })
+      .from(lectureContents)
+      .where(eq(lectureContents.id, contentId));
+
+    if (!existing) {
+      return res.status(404).json({ error: "Content item not found" });
+    }
+
+    const { title, url, cldPubId, mimeType, sizeBytes, order } = req.body;
+
+    // Note: type is intentionally excluded — changing type would require
+    // re-validation of url/cldPubId. Delete and re-create instead.
+    const [updated] = await db
+      .update(lectureContents)
+      .set({
+        ...(title !== undefined && { title }),
+        ...(url !== undefined && { url }),
+        ...(cldPubId !== undefined && { cldPubId }),
+        ...(mimeType !== undefined && { mimeType }),
+        ...(sizeBytes !== undefined && { sizeBytes }),
+        ...(order !== undefined && { order }),
+      })
+      .where(eq(lectureContents.id, contentId))
+      .returning({ ...getTableColumns(lectureContents) });
+
+    if (!updated) {
+      return res.status(500).json({ error: "Failed to update content item" });
+    }
+
+    res.status(200).json({ data: updated });
+  } catch (e) {
+    console.error(`PUT /lecture-contents/:id error: ${e}`);
+    res.status(500).json({ error: "Failed to update content item" });
+  }
+});
 
 // ─── PATCH /reorder — bulk update order for multiple items ───────────────────
 // Body: { items: [{ id: number, order: number }] }
 // Used by the dashboard drag-to-reorder list on the Content Manager page.
 
-router.patch(
-  "/reorder",
-  betterAuthMiddleware,
-  requireClassTeacherOrAdmin,
-  async (req, res) => {
-    try {
-      const { items } = req.body;
+router.patch("/reorder", requireClassTeacherOrAdmin, async (req, res) => {
+  try {
+    const { items } = req.body;
 
-      if (!Array.isArray(items) || items.length === 0) {
+    if (!Array.isArray(items) || items.length === 0) {
+      return res
+        .status(400)
+        .json({ error: "items array is required and must not be empty" });
+    }
+
+    // Validate all items have id and order
+    for (const item of items) {
+      if (typeof item.id !== "number" || typeof item.order !== "number") {
         return res
           .status(400)
-          .json({ error: "items array is required and must not be empty" });
+          .json({ error: "Each item must have numeric id and order fields" });
       }
-
-      // Validate all items have id and order
-      for (const item of items) {
-        if (typeof item.id !== "number" || typeof item.order !== "number") {
-          return res
-            .status(400)
-            .json({ error: "Each item must have numeric id and order fields" });
-        }
-      }
-
-      // Run all updates in parallel
-      await Promise.all(
-        items.map((item: { id: number; order: number }) =>
-          db
-            .update(lectureContents)
-            .set({ order: item.order })
-            .where(eq(lectureContents.id, item.id)),
-        ),
-      );
-
-      res.status(200).json({ message: "Content items reordered successfully" });
-    } catch (e) {
-      console.error(`PATCH /lecture-contents/reorder error: ${e}`);
-      res.status(500).json({ error: "Failed to reorder content items" });
     }
-  },
-);
+
+    // Run all updates in parallel
+    await Promise.all(
+      items.map((item: { id: number; order: number }) =>
+        db
+          .update(lectureContents)
+          .set({ order: item.order })
+          .where(eq(lectureContents.id, item.id)),
+      ),
+    );
+
+    res.status(200).json({ message: "Content items reordered successfully" });
+  } catch (e) {
+    console.error(`PATCH /lecture-contents/reorder error: ${e}`);
+    res.status(500).json({ error: "Failed to reorder content items" });
+  }
+});
 
 // ─── DELETE /:id — delete a content item ─────────────────────────────────────
 
-router.delete(
-  "/:id",
-  betterAuthMiddleware,
-  requireClassTeacherOrAdmin,
-  async (req, res) => {
-    try {
-      const contentId = Number(req.params.id);
+router.delete("/:id", requireClassTeacherOrAdmin, async (req, res) => {
+  try {
+    const contentId = Number(req.params.id);
 
-      if (!Number.isFinite(contentId)) {
-        return res.status(400).json({ error: "Invalid content id" });
-      }
-
-      const [existing] = await db
-        .select({
-          id: lectureContents.id,
-          cldPubId: lectureContents.cldPubId,
-          type: lectureContents.type,
-        })
-        .from(lectureContents)
-        .where(eq(lectureContents.id, contentId));
-
-      if (!existing) {
-        return res.status(404).json({ error: "Content item not found" });
-      }
-
-      const [deleted] = await db
-        .delete(lectureContents)
-        .where(eq(lectureContents.id, contentId))
-        .returning({
-          id: lectureContents.id,
-          cldPubId: lectureContents.cldPubId,
-          type: lectureContents.type,
-        });
-
-      if (!deleted) {
-        return res.status(500).json({ error: "Failed to delete content item" });
-      }
-
-      // Return cldPubId so the caller (dashboard) can clean up Cloudinary
-      res.status(200).json({
-        message: "Content item deleted successfully",
-        data: {
-          id: deleted.id,
-          cldPubId: deleted.cldPubId, // null for video type
-          type: deleted.type,
-        },
-      });
-    } catch (e) {
-      console.error(`DELETE /lecture-contents/:id error: ${e}`);
-      res.status(500).json({ error: "Failed to delete content item" });
+    if (!Number.isFinite(contentId)) {
+      return res.status(400).json({ error: "Invalid content id" });
     }
-  },
-);
+
+    const [existing] = await db
+      .select({
+        id: lectureContents.id,
+        cldPubId: lectureContents.cldPubId,
+        type: lectureContents.type,
+      })
+      .from(lectureContents)
+      .where(eq(lectureContents.id, contentId));
+
+    if (!existing) {
+      return res.status(404).json({ error: "Content item not found" });
+    }
+
+    const [deleted] = await db
+      .delete(lectureContents)
+      .where(eq(lectureContents.id, contentId))
+      .returning({
+        id: lectureContents.id,
+        cldPubId: lectureContents.cldPubId,
+        type: lectureContents.type,
+      });
+
+    if (!deleted) {
+      return res.status(500).json({ error: "Failed to delete content item" });
+    }
+
+    // Return cldPubId so the caller (dashboard) can clean up Cloudinary
+    res.status(200).json({
+      message: "Content item deleted successfully",
+      data: {
+        id: deleted.id,
+        cldPubId: deleted.cldPubId, // null for video type
+        type: deleted.type,
+      },
+    });
+  } catch (e) {
+    console.error(`DELETE /lecture-contents/:id error: ${e}`);
+    res.status(500).json({ error: "Failed to delete content item" });
+  }
+});
 
 export default router;

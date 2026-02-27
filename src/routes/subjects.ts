@@ -81,7 +81,7 @@ router.get("/", async (req, res) => {
 });
 
 // Get subjects for teacher - subjects of classes they teach
-router.get("/teacher", betterAuthMiddleware, async (req, res) => {
+router.get("/teacher", async (req, res) => {
   try {
     const { search, department, page = 1, limit = 10 } = req.query;
     const userId = req.user?.id;
@@ -154,7 +154,7 @@ router.get("/teacher", betterAuthMiddleware, async (req, res) => {
 });
 
 // Get subjects for student - subjects of classes they are enrolled in
-router.get("/student", betterAuthMiddleware, async (req, res) => {
+router.get("/student", async (req, res) => {
   try {
     const { search, department, page = 1, limit = 10 } = req.query;
     const userId = req.user?.id;

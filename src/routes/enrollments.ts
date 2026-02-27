@@ -329,46 +329,41 @@ router.get("/me", async (req, res) => {
 });
 
 // Delete enrollment
-router.delete(
-  "/:id",
-  betterAuthMiddleware,
-  requireTeacherOrAdmin,
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-      const enrollmentId = parseInt(id as string);
+router.delete("/:id", requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const enrollmentId = parseInt(id as string);
 
-      if (isNaN(enrollmentId)) {
-        return res.status(400).json({ error: "Invalid enrollment ID" });
-      }
-
-      const [existingEnrollment] = await db
-        .select()
-        .from(enrollments)
-        .where(eq(enrollments.id, enrollmentId));
-
-      if (!existingEnrollment) {
-        return res.status(404).json({ error: "Enrollment not found" });
-      }
-
-      const [deletedEnrollment] = await db
-        .delete(enrollments)
-        .where(eq(enrollments.id, enrollmentId))
-        .returning({ id: enrollments.id });
-
-      if (!deletedEnrollment) {
-        return res.status(500).json({ error: "Failed to delete enrollment" });
-      }
-
-      res.status(200).json({
-        message: "Enrollment deleted successfully",
-        data: { id: deletedEnrollment.id },
-      });
-    } catch (error) {
-      console.error("DELETE /enrollments/:id error:", error);
-      res.status(500).json({ error: "Failed to delete enrollment" });
+    if (isNaN(enrollmentId)) {
+      return res.status(400).json({ error: "Invalid enrollment ID" });
     }
-  },
-);
+
+    const [existingEnrollment] = await db
+      .select()
+      .from(enrollments)
+      .where(eq(enrollments.id, enrollmentId));
+
+    if (!existingEnrollment) {
+      return res.status(404).json({ error: "Enrollment not found" });
+    }
+
+    const [deletedEnrollment] = await db
+      .delete(enrollments)
+      .where(eq(enrollments.id, enrollmentId))
+      .returning({ id: enrollments.id });
+
+    if (!deletedEnrollment) {
+      return res.status(500).json({ error: "Failed to delete enrollment" });
+    }
+
+    res.status(200).json({
+      message: "Enrollment deleted successfully",
+      data: { id: deletedEnrollment.id },
+    });
+  } catch (error) {
+    console.error("DELETE /enrollments/:id error:", error);
+    res.status(500).json({ error: "Failed to delete enrollment" });
+  }
+});
 
 export default router;

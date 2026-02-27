@@ -38,7 +38,7 @@ const getLectureDetails = async (lectureId: number) => {
 
 // ─── GET /teacher/:teacherId — get all lectures for a teacher ─────────────────────
 
-router.get("/teacher/:teacherId", betterAuthMiddleware, async (req, res) => {
+router.get("/teacher/:teacherId", async (req, res) => {
   try {
     const { teacherId } = req.params;
     const { published, page = 1, limit = 50 } = req.query;
@@ -124,7 +124,7 @@ router.get("/teacher/:teacherId", betterAuthMiddleware, async (req, res) => {
 
 // ─── GET /student/:studentId — get all lectures for a student ─────────────────────
 
-router.get("/student/:studentId", betterAuthMiddleware, async (req, res) => {
+router.get("/student/:studentId", async (req, res) => {
   try {
     const { studentId } = req.params;
     const { published, page = 1, limit = 50 } = req.query;
@@ -213,7 +213,7 @@ router.get("/student/:studentId", betterAuthMiddleware, async (req, res) => {
 // ─── GET / — list lectures for a class ───────────────────────────────────────
 // Required query: ?classId=:id
 
-router.get("/", betterAuthMiddleware, async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const { classId, published, page = 1, limit = 50 } = req.query;
 
@@ -309,7 +309,7 @@ router.get("/", betterAuthMiddleware, async (req, res) => {
 
 // ─── GET /:id — single lecture with all content items ────────────────────────
 
-router.get("/:id", betterAuthMiddleware, async (req, res) => {
+router.get("/:id", async (req, res) => {
   try {
     const lectureId = Number(req.params.id);
 
@@ -358,205 +358,185 @@ router.get("/:id", betterAuthMiddleware, async (req, res) => {
 
 // ─── POST / — create a lecture ────────────────────────────────────────────────
 
-router.post(
-  "/",
-  async (req, res) => {
-    try {
-      console.log("Request body received:", req.body);
-      const { classId, title, description, order, isPublished } = req.body;
-      console.log("Destructured values:", {
-        classId,
+router.post("/", async (req, res) => {
+  try {
+    console.log("Request body received:", req.body);
+    const { classId, title, description, order, isPublished } = req.body;
+    console.log("Destructured values:", {
+      classId,
+      title,
+      description,
+      order,
+      isPublished,
+    });
+
+    if (!classId || !title) {
+      return res.status(400).json({ error: "classId and title are required" });
+    }
+
+    const parsedClassId = Number(classId);
+    if (!Number.isFinite(parsedClassId)) {
+      return res.status(400).json({ error: "Invalid classId" });
+    }
+
+    // Verify the class exists
+    const [classRecord] = await db
+      .select({ id: classes.id })
+      .from(classes)
+      .where(eq(classes.id, parsedClassId));
+
+    if (!classRecord) {
+      return res.status(404).json({ error: "Class not found" });
+    }
+
+    // Auto-assign order if not provided: place at end of existing lectures
+    let resolvedOrder = order;
+    if (resolvedOrder === undefined || resolvedOrder === null) {
+      const [maxOrder] = await db
+        .select({ max: sql<number>`coalesce(max(${lectures.order}), -1)` })
+        .from(lectures)
+        .where(eq(lectures.classId, parsedClassId));
+      resolvedOrder = (maxOrder?.max ?? -1) + 1;
+    }
+
+    const [created] = await db
+      .insert(lectures)
+      .values({
+        classId: parsedClassId,
         title,
         description,
-        order,
-        isPublished,
-      });
+        order: resolvedOrder,
+        isPublished: isPublished ?? false,
+      })
+      .returning({ id: lectures.id });
 
-      if (!classId || !title) {
-        return res
-          .status(400)
-          .json({ error: "classId and title are required" });
-      }
-
-      const parsedClassId = Number(classId);
-      if (!Number.isFinite(parsedClassId)) {
-        return res.status(400).json({ error: "Invalid classId" });
-      }
-
-      // Verify the class exists
-      const [classRecord] = await db
-        .select({ id: classes.id })
-        .from(classes)
-        .where(eq(classes.id, parsedClassId));
-
-      if (!classRecord) {
-        return res.status(404).json({ error: "Class not found" });
-      }
-
-      // Auto-assign order if not provided: place at end of existing lectures
-      let resolvedOrder = order;
-      if (resolvedOrder === undefined || resolvedOrder === null) {
-        const [maxOrder] = await db
-          .select({ max: sql<number>`coalesce(max(${lectures.order}), -1)` })
-          .from(lectures)
-          .where(eq(lectures.classId, parsedClassId));
-        resolvedOrder = (maxOrder?.max ?? -1) + 1;
-      }
-
-      const [created] = await db
-        .insert(lectures)
-        .values({
-          classId: parsedClassId,
-          title,
-          description,
-          order: resolvedOrder,
-          isPublished: isPublished ?? false,
-        })
-        .returning({ id: lectures.id });
-
-      if (!created) {
-        return res.status(500).json({ error: "Failed to create lecture" });
-      }
-
-      const lecture = await getLectureDetails(created.id);
-
-      res.status(201).json({ data: lecture });
-    } catch (e) {
-      console.error(`POST /lectures error: ${e}`);
-      res.status(500).json({ error: "Failed to create lecture" });
+    if (!created) {
+      return res.status(500).json({ error: "Failed to create lecture" });
     }
-  },
-);
+
+    const lecture = await getLectureDetails(created.id);
+
+    res.status(201).json({ data: lecture });
+  } catch (e) {
+    console.error(`POST /lectures error: ${e}`);
+    res.status(500).json({ error: "Failed to create lecture" });
+  }
+});
 
 // ─── PUT /:id — update a lecture ──────────────────────────────────────────────
 
-router.put(
-  "/:id",
-  betterAuthMiddleware,
-  requireClassTeacherOrAdmin,
-  async (req, res) => {
-    try {
-      const lectureId = Number(req.params.id);
+router.put("/:id", requireClassTeacherOrAdmin, async (req, res) => {
+  try {
+    const lectureId = Number(req.params.id);
 
-      if (!Number.isFinite(lectureId)) {
-        return res.status(400).json({ error: "Invalid lecture id" });
-      }
-
-      const [existing] = await db
-        .select({ id: lectures.id })
-        .from(lectures)
-        .where(eq(lectures.id, lectureId));
-
-      if (!existing) {
-        return res.status(404).json({ error: "Lecture not found" });
-      }
-
-      const { title, description, order, isPublished } = req.body;
-
-      const [updated] = await db
-        .update(lectures)
-        .set({
-          ...(title !== undefined && { title }),
-          ...(description !== undefined && { description }),
-          ...(order !== undefined && { order }),
-          ...(isPublished !== undefined && { isPublished }),
-        })
-        .where(eq(lectures.id, lectureId))
-        .returning({ id: lectures.id });
-
-      if (!updated) {
-        return res.status(500).json({ error: "Failed to update lecture" });
-      }
-
-      const lecture = await getLectureDetails(lectureId);
-
-      res.status(200).json({ data: lecture });
-    } catch (e) {
-      console.error(`PUT /lectures/:id error: ${e}`);
-      res.status(500).json({ error: "Failed to update lecture" });
+    if (!Number.isFinite(lectureId)) {
+      return res.status(400).json({ error: "Invalid lecture id" });
     }
-  },
-);
+
+    const [existing] = await db
+      .select({ id: lectures.id })
+      .from(lectures)
+      .where(eq(lectures.id, lectureId));
+
+    if (!existing) {
+      return res.status(404).json({ error: "Lecture not found" });
+    }
+
+    const { title, description, order, isPublished } = req.body;
+
+    const [updated] = await db
+      .update(lectures)
+      .set({
+        ...(title !== undefined && { title }),
+        ...(description !== undefined && { description }),
+        ...(order !== undefined && { order }),
+        ...(isPublished !== undefined && { isPublished }),
+      })
+      .where(eq(lectures.id, lectureId))
+      .returning({ id: lectures.id });
+
+    if (!updated) {
+      return res.status(500).json({ error: "Failed to update lecture" });
+    }
+
+    const lecture = await getLectureDetails(lectureId);
+
+    res.status(200).json({ data: lecture });
+  } catch (e) {
+    console.error(`PUT /lectures/:id error: ${e}`);
+    res.status(500).json({ error: "Failed to update lecture" });
+  }
+});
 
 // ─── PATCH /:id/publish — toggle published state ──────────────────────────────
 // Convenience endpoint used by the dashboard's inline toggle in the lecture list.
 
-router.patch(
-  "/:id/publish",
-  betterAuthMiddleware,
-  requireClassTeacherOrAdmin,
-  async (req, res) => {
-    try {
-      const lectureId = Number(req.params.id);
+router.patch("/:id/publish", requireClassTeacherOrAdmin, async (req, res) => {
+  try {
+    const lectureId = Number(req.params.id);
 
-      if (!Number.isFinite(lectureId)) {
-        return res.status(400).json({ error: "Invalid lecture id" });
-      }
-
-      const [existing] = await db
-        .select({ id: lectures.id, isPublished: lectures.isPublished })
-        .from(lectures)
-        .where(eq(lectures.id, lectureId));
-
-      if (!existing) {
-        return res.status(404).json({ error: "Lecture not found" });
-      }
-
-      const [updated] = await db
-        .update(lectures)
-        .set({ isPublished: !existing.isPublished })
-        .where(eq(lectures.id, lectureId))
-        .returning({ id: lectures.id, isPublished: lectures.isPublished });
-
-      res.status(200).json({ data: updated });
-    } catch (e) {
-      console.error(`PATCH /lectures/:id/publish error: ${e}`);
-      res.status(500).json({ error: "Failed to toggle publish state" });
+    if (!Number.isFinite(lectureId)) {
+      return res.status(400).json({ error: "Invalid lecture id" });
     }
-  },
-);
+
+    const [existing] = await db
+      .select({ id: lectures.id, isPublished: lectures.isPublished })
+      .from(lectures)
+      .where(eq(lectures.id, lectureId));
+
+    if (!existing) {
+      return res.status(404).json({ error: "Lecture not found" });
+    }
+
+    const [updated] = await db
+      .update(lectures)
+      .set({ isPublished: !existing.isPublished })
+      .where(eq(lectures.id, lectureId))
+      .returning({ id: lectures.id, isPublished: lectures.isPublished });
+
+    res.status(200).json({ data: updated });
+  } catch (e) {
+    console.error(`PATCH /lectures/:id/publish error: ${e}`);
+    res.status(500).json({ error: "Failed to toggle publish state" });
+  }
+});
 
 // ─── DELETE /:id — delete a lecture (contents cascade) ───────────────────────
 
-router.delete(
-  "/:id",
-  betterAuthMiddleware,
-  requireClassTeacherOrAdmin,
-  async (req, res) => {
-    try {
-      const lectureId = Number(req.params.id);
+router.delete("/:id", requireClassTeacherOrAdmin, async (req, res) => {
+  try {
+    const lectureId = Number(req.params.id);
 
-      if (!Number.isFinite(lectureId)) {
-        return res.status(400).json({ error: "Invalid lecture id" });
-      }
-
-      const [existing] = await db
-        .select({ id: lectures.id })
-        .from(lectures)
-        .where(eq(lectures.id, lectureId));
-
-      if (!existing) {
-        return res.status(404).json({ error: "Lecture not found" });
-      }
-
-      // lecture_contents rows cascade-delete via FK onDelete: cascade
-      const [deleted] = await db
-        .delete(lectures)
-        .where(eq(lectures.id, lectureId))
-        .returning({ id: lectures.id });
-
-      if (!deleted) {
-        return res.status(500).json({ error: "Failed to delete lecture" });
-      }
-
-      res.status(200).json({
-        message: "Lecture deleted successfully",
-        data: { id: deleted?.id },
-      });
-    } catch (e) {
-      console.error(`DELETE /lectures/:id error: ${e}`);
-      res.status(500).json({ error: "Failed to delete lecture" });
+    if (!Number.isFinite(lectureId)) {
+      return res.status(400).json({ error: "Invalid lecture id" });
     }
-  },
-);
+
+    const [existing] = await db
+      .select({ id: lectures.id })
+      .from(lectures)
+      .where(eq(lectures.id, lectureId));
+
+    if (!existing) {
+      return res.status(404).json({ error: "Lecture not found" });
+    }
+
+    // lecture_contents rows cascade-delete via FK onDelete: cascade
+    const [deleted] = await db
+      .delete(lectures)
+      .where(eq(lectures.id, lectureId))
+      .returning({ id: lectures.id });
+
+    if (!deleted) {
+      return res.status(500).json({ error: "Failed to delete lecture" });
+    }
+
+    res.status(200).json({
+      message: "Lecture deleted successfully",
+      data: { id: deleted?.id },
+    });
+  } catch (e) {
+    console.error(`DELETE /lectures/:id error: ${e}`);
+    res.status(500).json({ error: "Failed to delete lecture" });
+  }
+});
 export default router;
