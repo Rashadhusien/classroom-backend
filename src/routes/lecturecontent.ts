@@ -3,9 +3,9 @@ import { and, asc, eq, getTableColumns, sql } from "drizzle-orm";
 
 import { db } from "../db/index.js";
 import { lectureContents, lectures, enrollments } from "../db/schema/app.js";
-import { betterAuthMiddleware } from "../middleware/auth.js";
-import { requireClassTeacherOrAdmin } from "../middleware/requireTeacher.js";
-import { requireEnrollment } from "../middleware/requireEnrollment.js";
+// import { betterAuthMiddleware } from "../middleware/auth.js";
+// import { requireClassTeacherOrAdmin } from "../middleware/requireTeacher.js";
+// import { requireEnrollment } from "../middleware/requireEnrollment.js";
 
 const router = express.Router();
 
@@ -203,7 +203,7 @@ router.post("/", async (req, res) => {
 
 // ─── PUT /:id — update a content item ────────────────────────────────────────
 
-router.put("/:id", requireClassTeacherOrAdmin, async (req, res) => {
+router.put("/:id", async (req, res) => {
   try {
     const contentId = Number(req.params.id);
 
@@ -252,7 +252,7 @@ router.put("/:id", requireClassTeacherOrAdmin, async (req, res) => {
 // Body: { items: [{ id: number, order: number }] }
 // Used by the dashboard drag-to-reorder list on the Content Manager page.
 
-router.patch("/reorder", requireClassTeacherOrAdmin, async (req, res) => {
+router.patch("/reorder", async (req, res) => {
   try {
     const { items } = req.body;
 
@@ -290,7 +290,7 @@ router.patch("/reorder", requireClassTeacherOrAdmin, async (req, res) => {
 
 // ─── DELETE /:id — delete a content item ─────────────────────────────────────
 
-router.delete("/:id", requireClassTeacherOrAdmin, async (req, res) => {
+router.delete("/:id", async (req, res) => {
   try {
     const contentId = Number(req.params.id);
 

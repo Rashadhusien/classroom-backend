@@ -9,8 +9,8 @@ import {
   subjects,
   user,
 } from "../db/schema/index.js";
-import { betterAuthMiddleware } from "../middleware/auth.js";
-import { requireTeacherOrAdmin } from "../middleware/requireTeacher.js";
+// import { betterAuthMiddleware } from "../middleware/auth.js";
+// import { requireTeacherOrAdmin } from "../middleware/requireTeacher.js";
 
 const router = express.Router();
 
@@ -230,8 +230,7 @@ router.get("/student", async (req, res) => {
 
 router.post(
   "/",
-  betterAuthMiddleware,
-  requireTeacherOrAdmin,
+
   async (req, res) => {
     try {
       const { departmentId, name, code, description } = req.body;

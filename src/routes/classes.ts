@@ -22,10 +22,10 @@ import {
 import { user } from "../db/schema/auth.js";
 import { betterAuthMiddleware } from "../middleware/auth.js";
 import { requireEnrollment } from "../middleware/requireEnrollment.js";
-import {
-  requireTeacherOrAdmin,
-  requireClassTeacherOrAdmin,
-} from "../middleware/requireTeacher.js";
+// import {
+//   requireTeacherOrAdmin,
+//   requireClassTeacherOrAdmin,
+// } from "../middleware/requireTeacher.js";
 
 const router = express.Router();
 
@@ -512,7 +512,6 @@ router.get(
 router.post(
   "/",
 
-  requireTeacherOrAdmin,
   async (req, res) => {
     try {
       const {
@@ -571,7 +570,6 @@ router.post(
 router.put(
   "/:id",
 
-  requireClassTeacherOrAdmin,
   async (req, res) => {
     try {
       const classId = Number(req.params.id);
@@ -638,7 +636,6 @@ router.put(
 router.delete(
   "/:id",
 
-  requireClassTeacherOrAdmin,
   async (req, res) => {
     try {
       const classId = Number(req.params.id);

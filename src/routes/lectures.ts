@@ -8,12 +8,12 @@ import {
   lectureContents,
   lectures,
 } from "../db/schema/app.js";
-import { betterAuthMiddleware } from "../middleware/auth.js";
-import { requireEnrollment } from "../middleware/requireEnrollment.js";
-import {
-  requireTeacherOrAdmin,
-  requireClassTeacherOrAdmin,
-} from "../middleware/requireTeacher.js";
+// import { betterAuthMiddleware } from "../middleware/auth.js";
+// import { requireEnrollment } from "../middleware/requireEnrollment.js";
+// import {
+//   requireTeacherOrAdmin,
+//   requireClassTeacherOrAdmin,
+// } from "../middleware/requireTeacher.js";
 
 const router = express.Router();
 
@@ -425,7 +425,7 @@ router.post("/", async (req, res) => {
 
 // ─── PUT /:id — update a lecture ──────────────────────────────────────────────
 
-router.put("/:id", requireClassTeacherOrAdmin, async (req, res) => {
+router.put("/:id", async (req, res) => {
   try {
     const lectureId = Number(req.params.id);
 
@@ -471,7 +471,7 @@ router.put("/:id", requireClassTeacherOrAdmin, async (req, res) => {
 // ─── PATCH /:id/publish — toggle published state ──────────────────────────────
 // Convenience endpoint used by the dashboard's inline toggle in the lecture list.
 
-router.patch("/:id/publish", requireClassTeacherOrAdmin, async (req, res) => {
+router.patch("/:id/publish", async (req, res) => {
   try {
     const lectureId = Number(req.params.id);
 
@@ -503,7 +503,7 @@ router.patch("/:id/publish", requireClassTeacherOrAdmin, async (req, res) => {
 
 // ─── DELETE /:id — delete a lecture (contents cascade) ───────────────────────
 
-router.delete("/:id", requireClassTeacherOrAdmin, async (req, res) => {
+router.delete("/:id", async (req, res) => {
   try {
     const lectureId = Number(req.params.id);
 

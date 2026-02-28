@@ -9,8 +9,8 @@ import {
   subjects,
   user,
 } from "../db/schema/index.js";
-import { betterAuthMiddleware } from "../middleware/auth.js";
-import { requireTeacherOrAdmin } from "../middleware/requireTeacher.js";
+// import { betterAuthMiddleware } from "../middleware/auth.js";
+// import { requireTeacherOrAdmin } from "../middleware/requireTeacher.js";
 
 const router = express.Router();
 
@@ -44,8 +44,7 @@ const getEnrollmentDetails = async (enrollmentId: number) => {
 // Create enrollment
 router.post(
   "/",
-  betterAuthMiddleware,
-  requireTeacherOrAdmin,
+
   async (req, res) => {
     try {
       const { classId, studentId } = req.body;
@@ -329,7 +328,7 @@ router.get("/me", async (req, res) => {
 });
 
 // Delete enrollment
-router.delete("/:id", requireTeacherOrAdmin, async (req, res) => {
+router.delete("/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const enrollmentId = parseInt(id as string);
