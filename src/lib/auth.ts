@@ -5,6 +5,7 @@ import { db } from "../db/index.js";
 import * as schema from "../db/schema/auth.js";
 
 export const auth = betterAuth({
+  baseURL: process.env.BETTER_AUTH_BASE_URL || process.env.BACKEND_URL,
   secret: process.env.BETTER_AUTH_SECRET!,
   trustedOrigins: [process.env.FRONTEND_URL!],
   database: drizzleAdapter(db, {
@@ -20,6 +21,12 @@ export const auth = betterAuth({
     cookieCache: {
       enabled: true,
       maxAge: 5 * 60, // 5 minutes
+    },
+    cookiePrefix: "classroom",
+    cookieAttributes: {
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      httpOnly: true,
     },
   },
   user: {

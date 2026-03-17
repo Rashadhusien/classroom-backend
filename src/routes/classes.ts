@@ -360,7 +360,7 @@ router.get("/student", async (req, res) => {
 
 // ─── GET /:id — class detail with relations & counts ─────────────────────────
 
-router.get("/:id", betterAuthMiddleware, async (req, res) => {
+router.get("/:id", async (req, res) => {
   try {
     const classId = Number(req.params.id);
     const userId = req.user?.id;
